@@ -122,6 +122,7 @@ void do5Gauss(cv::Mat *my_input_img, cv::Mat *my_output_image, int threads) {
 	int col;
 	int i;
 
+
 	//Główna pętla programu
 	#pragma omp parallel for private(row, col, i, minus1Row, minus2Row, currentRow, plus1Row, plus2Row) num_threads(threads)
 	for(row = 2; row < my_input_img->rows - 2; ++row) {
@@ -156,6 +157,7 @@ void do5Gauss(cv::Mat *my_input_img, cv::Mat *my_output_image, int threads) {
 
 			//printf("[%3d][%3d] blueTotal= %d\n", row, col, blueTotal);
 
+			// Zaokrąglamy i robimy niejawną konwersję uchar -> int
 			blueTotal  = round(blueTotal  / 25.0f);
 			greenTotal = round(greenTotal / 25.0f);
 			redTotal   = round(redTotal   / 25.0f);
@@ -184,7 +186,6 @@ void do5GaussOLD(cv::Mat *my_input_img, cv::Mat *my_output_image, int threads) {
 					greenTotal += pixel.val[1];
 					redTotal   += pixel.val[2];
 				}
-
 			}
 
 			//printf("[%3d][%3d] OLDblueTotal= %d\n", row, col, blueTotal);
@@ -207,7 +208,6 @@ void generateSampleMatrix(cv::Mat *outputImage) {
 			outputImage->at<cv::Vec3b>(row, col) = cv::Vec3b(row, col, 66);
 		}
 	}
-
 }
 
 bool compareTwoMatrixes(cv::Mat *leftMatrix, cv::Mat *rightMatrix){

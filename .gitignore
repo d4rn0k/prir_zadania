@@ -1,2 +1,6 @@
 img_in/
 img_out/
+*.bak
+*.log
+*.aux
+*.synctex.gz

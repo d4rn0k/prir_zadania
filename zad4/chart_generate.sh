@@ -1,4 +1,4 @@
- #!/bin/bash
+#!/bin/bash
 #Ver v2
 
 echo "Skrypt do generowania wykresu zależności czasu wykonania oraz przyspieszenia od liczby wątków wykorzystując gnuplot'a"
@@ -63,3 +63,8 @@ do
 	echo $i $AVG_SPEEDUP >> $SPEEDUP_CHART_FILENAME.data
 
 done
+
+gnuplot < $GNUPLOT_CHART_CONFIG_FILENAME
+
+epspdf $TIME_CHART_FILENAME
+epspdf $SPEEDUP_CHART_FILENAME
