@@ -4,3 +4,6 @@ img_out/
 *.log
 *.aux
 *.synctex.gz
+.cproject
+.project
+.settings
