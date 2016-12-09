@@ -6,6 +6,7 @@
 #include <math.h>
 
 #include <iostream>
+#include <iomanip>
 #include <stdexcept>
 
 #include "gauss_mpi.h"
@@ -120,19 +121,47 @@ int main(int argc, char *argv[]) {
 
 			int pixelsDataCount = rowsPerProcess[destination] * columnsTotal * CHANNELS;
 
-			HANDLE_ERROR(MPI_Send(&columnsTotal                    , 1                   , MPI_INT,           destination, MSG_FROM_MASTER, MPI_COMM_WORLD));
-			HANDLE_ERROR(MPI_Send(&rowsPerProcess[destination], 1                   , MPI_INT,           destination, MSG_FROM_MASTER, MPI_COMM_WORLD));
-			HANDLE_ERROR(MPI_Send(&input_imageMat.data[toSendOffset] , pixelsDataCount, MPI_UNSIGNED_CHAR, destination, MSG_FROM_MASTER, MPI_COMM_WORLD));
+			HANDLE_ERROR(MPI_Send(&columnsTotal,
+					1,
+					MPI_INT,
+					destination,
+					MSG_FROM_MASTER,
+					MPI_COMM_WORLD)
+			);
+			HANDLE_ERROR(MPI_Send(&rowsPerProcess[destination],
+					1,
+					MPI_INT,
+					destination,
+					MSG_FROM_MASTER, MPI_COMM_WORLD)
+			);
+			HANDLE_ERROR(MPI_Send(&input_imageMat.data[toSendOffset],
+					pixelsDataCount,
+					MPI_UNSIGNED_CHAR,
+					destination,
+					MSG_FROM_MASTER,
+					MPI_COMM_WORLD)
+			);
 
 			// Odejmujemy od offsetu 2 wiersze (te poniżej)!
 			toSendOffset = toSendOffset + pixelsDataCount - (2 * (columnsTotal * CHANNELS ));
 		}
 
 		// Proces 0 oblicza swoją część:
-		cv::Mat inputMatrixForFirstProcess = cv::Mat(rowsPerProcess[0], columnsTotal, input_imageMat.type());
-		cv::Mat outputMatrixForFirstProcess = cv::Mat(inputMatrixForFirstProcess.rows - 4, inputMatrixForFirstProcess.cols - 4, input_imageMat.type());
+		cv::Mat inputMatrixForFirstProcess =
+				cv::Mat(rowsPerProcess[0],
+						columnsTotal,
+						input_imageMat.type()
+				);
 
-		memcpy(&inputMatrixForFirstProcess.data[0], &input_imageMat.data[0], inputMatrixForFirstProcess.rows * inputMatrixForFirstProcess.cols * CHANNELS);
+		cv::Mat outputMatrixForFirstProcess =
+				cv::Mat(inputMatrixForFirstProcess.rows - 4,
+						inputMatrixForFirstProcess.cols - 4,
+						input_imageMat.type()
+				);
+
+		memcpy(&inputMatrixForFirstProcess.data[0],
+				&input_imageMat.data[0],
+				inputMatrixForFirstProcess.rows * inputMatrixForFirstProcess.cols * CHANNELS);
 
 		startTime = MPI_Wtime();
 		do5GaussMPI(&inputMatrixForFirstProcess, &outputMatrixForFirstProcess);
@@ -141,7 +170,9 @@ int main(int argc, char *argv[]) {
 		timeElapsedTotal = (stopTime - startTime) * 1000;
 
 
-		memcpy(&output_imageMat.data[0], &outputMatrixForFirstProcess.data[0], outputMatrixForFirstProcess.rows * outputMatrixForFirstProcess.cols * CHANNELS);
+		memcpy(&output_imageMat.data[0],
+				&outputMatrixForFirstProcess.data[0],
+				outputMatrixForFirstProcess.rows * outputMatrixForFirstProcess.cols * CHANNELS);
 
 
 		// Odbieramy obliczone dane od reszty procesów
@@ -192,20 +223,32 @@ int main(int argc, char *argv[]) {
 		inputMatrixForFirstProcess.release();
 		outputMatrixForFirstProcess.release();
 
-		std::cout << "Obrazek zapisany!" << std::endl;
-
-		printf("Czas %.0f ms\n", timeElapsedTotal);
+		std::cout << "Czas " << std::fixed << std::setprecision(0)<< timeElapsedTotal << "ms" << std::endl;
 
 	} else {
 		// Rank != 0, każdy inny proces
 
 		// Odbieranie danych początkowych
-		HANDLE_ERROR(MPI_Recv(&columnsTotal   , 1	, MPI_INT,   MASTER, MSG_FROM_MASTER, MPI_COMM_WORLD, &status));
-		HANDLE_ERROR(MPI_Recv(&rowsToCalculate, 1	, MPI_INT,   MASTER, MSG_FROM_MASTER, MPI_COMM_WORLD, &status));
+		HANDLE_ERROR(MPI_Recv(&columnsTotal,
+				1,
+				MPI_INT,
+				MASTER,
+				MSG_FROM_MASTER,
+				MPI_COMM_WORLD,
+				&status)
+		);
+		HANDLE_ERROR(MPI_Recv(&rowsToCalculate,
+				1,
+				MPI_INT,
+				MASTER,
+				MSG_FROM_MASTER,
+				MPI_COMM_WORLD,
+				&status)
+		);
 
 
+		// Tworzymy macierze na wejścię i wyjście mniejsze o 4
 		cv::Mat inputMatrixForProcess = cv::Mat(rowsToCalculate, columnsTotal, CV_8UC3);
-		// Tworzymy nową macierz na wynikowe dane
 		cv::Mat outputMatrixForProcess = cv::Mat(rowsToCalculate - 4, columnsTotal - 4, CV_8UC3);
 
 		// Odbieramy dane potrzebne do obliczeń od MASTERA
@@ -337,9 +380,26 @@ void do5GaussMPI(cv::Mat *my_input_img, cv::Mat *my_output_image) {
 				int greenColIndex = index + 1;
 				int redColIndex   = index + 2;
 
-				blueTotal  += minus2Row[blueColIndex ] + minus1Row[blueColIndex ] + currentRow[blueColIndex ] + plus1Row[blueColIndex ] + plus2Row[blueColIndex ];
-				greenTotal += minus2Row[greenColIndex] + minus1Row[greenColIndex] + currentRow[greenColIndex] + plus1Row[greenColIndex] + plus2Row[greenColIndex];
-				redTotal   += minus2Row[redColIndex  ] + minus1Row[redColIndex  ] + currentRow[redColIndex  ] + plus1Row[redColIndex  ] + plus2Row[redColIndex  ];
+				blueTotal  +=
+						minus2Row  [blueColIndex] +
+						minus1Row  [blueColIndex] +
+						currentRow [blueColIndex] +
+						plus1Row   [blueColIndex] +
+						plus2Row   [blueColIndex];
+
+				greenTotal +=
+						minus2Row  [greenColIndex] +
+						minus1Row  [greenColIndex] +
+						currentRow [greenColIndex] +
+						plus1Row   [greenColIndex] +
+						plus2Row   [greenColIndex];
+
+				redTotal   +=
+						minus2Row  [redColIndex] +
+						minus1Row  [redColIndex] +
+						currentRow [redColIndex] +
+						plus1Row   [redColIndex] +
+						plus2Row   [redColIndex];
 
 			}
 
