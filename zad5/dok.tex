@@ -1,0 +1,149 @@
+\documentclass[a4paper,12pt]{article}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage[polish]{babel}
+\usepackage{polski}
+\usepackage[utf8]{inputenc}
+\usepackage{indentfirst}
+\usepackage{geometry}
+\usepackage{array}
+\usepackage[pdftex]{color,graphicx}
+\usepackage{subfigure}
+\usepackage{afterpage}
+\usepackage{setspace}
+\usepackage{color}
+\usepackage{wrapfig}
+\usepackage{listings}
+\usepackage{datetime}
+
+
+\renewcommand{\onehalfspacing}{\setstretch{1.6}}
+
+\geometry{tmargin=2.5cm,bmargin=2.5cm,lmargin=2.5cm,rmargin=2.5cm}
+\setlength{\parindent}{1cm}
+\setlength{\parskip}{0mm}
+
+\newenvironment{lista}{
+\begin{itemize}
+  \setlength{\itemsep}{1pt}
+  \setlength{\parskip}{0pt}
+  \setlength{\parsep}{0pt}
+}{\end{itemize}}
+
+\newcommand{\linia}{\rule{\linewidth}{0.4mm}}
+
+\definecolor{lbcolor}{rgb}{0.95,0.95,0.95}
+\lstset{
+    backgroundcolor=\color{lbcolor},
+    tabsize=4,
+  language=C++,
+  captionpos=b,
+  tabsize=3,
+  frame=lines,
+  numbers=left,
+  numberstyle=\tiny,
+  numbersep=5pt,
+  breaklines=true,
+  showstringspaces=false,
+  basicstyle=\footnotesize,
+  identifierstyle=\color{magenta},
+  keywordstyle=\color[rgb]{0,0,1},
+  commentstyle=\color{Darkgreen},
+  stringstyle=\color{red}
+  }
+\begin{document}
+
+\noindent
+\begin{tabular}{|c|p{11cm}|c|} \hline 
+Grupa 1 & Kamil Sacha, Konrad Szwedo & \ddmmyyyydate\today \tabularnewline
+\hline 
+\end{tabular}
+
+\renewcommand{\lstlistingname}{Listing kodu}
+
+\section*{Zadanie 2 - Mnożenie macierzy OpenMPI}
+
+Naszym zadaniem laboratoryjnym było napisanie współbieżnego programu, który miał obliczyć iloczyn dwóch macierzy wstępnie wypełnionymi liczbami według wzorów podanych w zadaniu. Głównym celem było stworzenia rozwiązania które miało pokazywać wpływ tworzenia oprogramowania na szybkość obliczeń.
+
+
+\begin{lstlisting}[caption=Część programu odpowiedzialna za wysyłanie macierzy A oraz B i odbiór wyników z reszty procesów, label=kodzik]
+ 
+if (totalProcesses != 1) {
+
+starttime = MPI_Wtime();
+
+
+for(int destination = 1; destination < totalProcesses; destination++){
+
+	elemsForProc = getElemsCountForProcess(matrixSize, totalProcesses, destination);
+	rowsOffset += elemsForProc / matrixSize;
+
+	MPI_Send(&elemsForProc,                  1,   MPI_INT, destination, MSG_FROM_MASTER, MPI_COMM_WORLD);
+	MPI_Send(&rowsOffset,                    1,   MPI_INT, destination, MSG_FROM_MASTER, MPI_COMM_WORLD);
+	MPI_Send(&A[rowsOffset][0],   elemsForProc, MPI_FLOAT, destination, MSG_FROM_MASTER, MPI_COMM_WORLD);
+	MPI_Send(&B[0][0], matrixSize * matrixSize, MPI_FLOAT, destination, MSG_FROM_MASTER, MPI_COMM_WORLD);
+}
+
+
+multiplyPartOfMatrix(A, B, C, matrixSize, 0, getElemsCountForProcess(matrixSize, totalProcesses, MASTER));
+
+
+for (int source = 1; source < totalProcesses; source++) {
+	MPI_Recv(&elemsForProc,                 1, MPI_INT,    source, MSG_FROM_WORKER, MPI_COMM_WORLD, &status);
+	MPI_Recv(&rowsOffset,                   1, MPI_INT,    source, MSG_FROM_WORKER, MPI_COMM_WORLD, &status);
+	MPI_Recv(&C[rowsOffset][0], elemsForProc , MPI_DOUBLE, source, MSG_FROM_WORKER, MPI_COMM_WORLD, &status);
+}
+
+endtime   = MPI_Wtime();
+
+printf("Czas %.0f ms\n", (endtime - starttime) * 1000);
+}
+
+
+\end{lstlisting}
+
+Zrównoleglenie problemu mnożenia macierzy zostało wykonane w środowisku OpenMPI, jest to środowisko do wymiany wiadomości/komunikatów między procesami.
+
+Powyższy fragment kodu przedstawia część odpowiedzialną za odbieranie, liczenie, oraz wysyłanie danych do procesu mastera - zarządcy. Algorytm działa w następujący sposób:
+Gdy program uruchomiony jest jako posiadający maksimum 1 proces, najpierw inicjalizowane są macierze A, B, C, następnie generowane liczby wypełniające je a na końcu cały blok instrukcji mnożenia macierzy jest wykonywany przez pojedynczy proces. 
+Gdy liczba procesów jest większa niż dwa, proces główny master rozsyła pozostałym całą macierz B, część macierzy A, oraz liczbę elementów które ma policzyć i liczbę wierszy (macierzy A). 
+Procesy są blokowane funkcją czekającą na dane \textbf{MPI\_Recv(...)}.
+
+Gdy otrzymają dane wykonywana jest funkcja: \textbf{multiplyPartOfMatrix(A, B, C, matrixSize, rowsOffset, elemsForProc)} która to oblicza swoją część macierzy i zapisuje ją do tablicy \textbf{C}. Następnie procesy inne niż master, wysyłają z powrotem dane do procesu mastera który to czeka na złączenie wszystkich wyników w swoim egzemplarzu tablicy \textbf{C}. Proces master po wysłaniu danych, przystępuje do liczenia, dzięki temu podejściu każdy proces ma swój udział w obliczeniach i nie dochodzi do sytuacji, że jeden proces byłby wykorzystywany tylko na generowanie, wysyłanie i dalsze oczekiwanie na wyniki.
+
+
+\section*{Wyniki}
+
+\begin{wrapfigure}{l}{0.6\textwidth}
+	\vbox{-10pt}
+	\resizebox{1.0\linewidth}{!}{\input{dane/wykres_czasu}}    
+    \caption{Wykres zależności czasu wykonania od liczby procesów. Dla rozmiaru $10^6$ danych 	macierzy.}
+\end{wrapfigure}
+
+Program za pomocą biblioteki openMPI zrównoleglony został poprawnie,
+o czym świadczy wykres 1. \\
+Niewielkie załamanie liniowości wykresu związane jest najprawdopodobniej z wykorzystywaniem technologi \textit{HyperThreading}. 
+Inną przyczyną może być też testowanie na serwerze który nie pracuje tylko i wyłącznie dla nas (wykonuje on też swoje zadania co wpływa na wynik, nie mamy 100\% dostępu do czasu procesora. 
+\clearpage
+
+
+\begin{wrapfigure}{r}{0.6\textwidth}
+	\vspace{-10pt}
+	\resizebox{1.0\linewidth}{!}{\input{dane/wykres_przyspieszenia.tex}} 	
+    \caption{Wykres zależności przyśpieszenia od liczby procesów. Dla rozmiaru $10^6$ danych macierzy.}
+\end{wrapfigure}
+
+
+Największą wydajność uzyskujemy dla 4 procesów, naszym zdaniem związane jest to z tym, że w takim układzie każdy rdzeń procesora dostaje swój proces i wykorzystuje go maksymalnie. \\
+
+
+\section*{Procedura testowania}
+
+Do przetestowania planowanego wzrostu wydajności został napisany skrypt pracujący pod powłoką BASH. Dla zadanego rozmiaru macierzy  w naszym przypadku $10^6$ oblicza średnią z 10 uruchomień naszego programu macierzomp (jako rozmiar macierzy przyjmujemy całkowitą ilość elementów jednej macierzy, wynika z tego, że macierz jest jest rozmiaru n x n gdzie n = $\sqrt[]{matrixSize}$, n jest zawsze liczbą całkowitą). W Ostatnim etapie generowany jest wykres w programie gnuplot. Program kompiluje się poprawnie poprzez kompilator MPI \textit{gcxx} z flagą \textit{-O3} w celu optymalizacji kodu i tym samym przyśpieszenia wykonania programu.
+
+\section*{Wnioski}
+
+Jak możemy zauważyć skalowalność czasowa jest liniowa do wartości 4 procesów. Wiążę się to z kilkoma czynnikami, jednym z czynników jest to, że dla większej ilości procesów powstaje narzut współbieżności związany z tworzeniem, synchronizacją, i zarządzaniem poszczególnymi procesami. Drugim ważniejszym czynnikiem jest narzut związany z wymianą danych, przykładowo dla macierzy rozmiarów (100x100) zawierającą 1E4 elementów, gdzie każdy element jest liczbą zmiennoprzecinkową typu float, na samo wysłanie wyników do procesu mastera musimy wymienić 4E8 bajtów czyli około 400 megabajtów pamięci. 
+
+
+\end{document}
