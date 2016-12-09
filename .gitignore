@@ -1,5 +1,6 @@
 img_in/
 img_out/
+*.data
 *.bak
 *.log
 *.aux
