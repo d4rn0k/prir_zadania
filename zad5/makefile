@@ -1,9 +1,9 @@
 PROGRAM_NAME = gauss_mpi
 
 CC = mpicxx
-CFLAGS = -g -Wall -std=c++11 -O0
+CFLAGS = -Wall -std=c++11 -O3
 
-SRCS = $(PROGRAM_NAME).cpp
+SRCS = src/$(PROGRAM_NAME).cpp
 
 OPENCV = `pkg-config opencv --cflags --libs`
 LIBS = $(OPENCV)
