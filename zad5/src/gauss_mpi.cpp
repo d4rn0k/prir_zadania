@@ -10,31 +10,24 @@
 #include <stdexcept>
 
 #include "gauss_mpi.h"
-#include "handle_error_macro.h"
 
 #define MASTER 0
 #define CHANNELS 3
-
 #define MSG_FROM_WORKER 666
 #define MSG_FROM_MASTER 111
 
-// Extern rank, potrzebny do makra HANDLE_ERROR
-int rank;
 
 int main(int argc, char *argv[]) {
 
-	int processCount;
-
-	int rowsToCalculate, columnsTotal;
+	int rank, processCount, rowsToCalculate, columnsTotal;
 
 	double startTime = 0.0d, stopTime = 0.0d, timeElapsedTotal = 0.0d;
 
-	MPI_Status status;
+	MPI::Status status;
 	MPI::Init(argc, argv);
 
 	processCount = MPI::COMM_WORLD.Get_size();
 	rank = MPI::COMM_WORLD.Get_rank();
-
 
 	//Rank == 0, MASTER proces wczytuje obrazek
 	if (rank == MASTER) {
@@ -68,8 +61,9 @@ int main(int argc, char *argv[]) {
 					<< "output_image - ścieżka do pliku obrazu wyjściowego w formacie JPEG" << std::endl
 					<< "\nBłąd: " << exc.what() << std::endl;
 
-			MPI_Abort(MPI_COMM_WORLD, -1);
+			MPI::COMM_WORLD.Abort(-1);
 			MPI::Finalize();
+
 			return -1;
 		}
 
@@ -102,40 +96,38 @@ int main(int argc, char *argv[]) {
 		 */
 
 		// Ustawiamy tablicę z ilością wierszy na proces
-		// Tu można się zastanowić nad MPI_SendRecv w celu clean code
 		std::vector<int> rowsPerProcess = getRowsPerProcessDistribution(input_imageMat.rows, processCount);
 
 		// offset początkowy ustawiony na ilość elementów dla procesu MASTER (0)
 		int toSendOffset = (rowsPerProcess[MASTER] - 2) * columnsTotal * 3;
 
-
 		for (int destination = 1; destination < processCount; destination++) {
 
 			int pixelsDataCount = rowsPerProcess[destination] * columnsTotal * CHANNELS;
 
-			HANDLE_ERROR(MPI_Send(&columnsTotal,
+			MPI::COMM_WORLD.Send(&columnsTotal,
 					1,
-					MPI_INT,
+					MPI::INT,
 					destination,
-					MSG_FROM_MASTER,
-					MPI_COMM_WORLD)
+					MSG_FROM_MASTER
 			);
-			HANDLE_ERROR(MPI_Send(&rowsPerProcess[destination],
+
+			MPI::COMM_WORLD.Send(&rowsPerProcess[destination],
 					1,
-					MPI_INT,
+					MPI::INT,
 					destination,
-					MSG_FROM_MASTER, MPI_COMM_WORLD)
+					MSG_FROM_MASTER
 			);
-			HANDLE_ERROR(MPI_Send(&input_imageMat.data[toSendOffset],
+
+			MPI::COMM_WORLD.Send(&input_imageMat.data[toSendOffset],
 					pixelsDataCount,
-					MPI_UNSIGNED_CHAR,
+					MPI::UNSIGNED_CHAR,
 					destination,
-					MSG_FROM_MASTER,
-					MPI_COMM_WORLD)
+					MSG_FROM_MASTER
 			);
 
 			// Odejmujemy od offsetu 2 wiersze (te poniżej)!
-			toSendOffset = toSendOffset + pixelsDataCount - (2 * (columnsTotal * CHANNELS ));
+			toSendOffset += pixelsDataCount - (2 * (columnsTotal * CHANNELS ));
 		}
 
 		// Proces 0 oblicza swoją część:
@@ -151,21 +143,11 @@ int main(int argc, char *argv[]) {
 						input_imageMat.type()
 				);
 
-		memcpy(&inputMatrixForFirstProcess.data[0],
-				&input_imageMat.data[0],
-				inputMatrixForFirstProcess.rows * inputMatrixForFirstProcess.cols * CHANNELS);
 
-		startTime = MPI_Wtime();
-		do5GaussMPI(&inputMatrixForFirstProcess, &outputMatrixForFirstProcess);
-		stopTime = MPI_Wtime();
-
-		timeElapsedTotal = (stopTime - startTime) * 1000;
-
-
-		memcpy(&output_imageMat.data[0],
-				&outputMatrixForFirstProcess.data[0],
-				outputMatrixForFirstProcess.rows * outputMatrixForFirstProcess.cols * CHANNELS);
-
+		// Proces MASTER operuje bezpośrednio na macierzy którą wczytał i na tej którą zapisze
+		// Bo nie potrzebne jest tutaj kopiowanie pamięci
+		startTime = MPI::Wtime();
+		do5GaussMPI(&input_imageMat, &output_imageMat);
 
 		// Odbieramy obliczone dane od reszty procesów
 		int outputImageOffset = (rowsPerProcess[MASTER] - 4) * (columnsTotal - 4) * CHANNELS;
@@ -173,31 +155,22 @@ int main(int argc, char *argv[]) {
 
 			int totalRecvDataCount = (rowsPerProcess[source] - 4) * (columnsTotal - 4) * CHANNELS;
 
-			HANDLE_ERROR(MPI_Recv(&output_imageMat.data[outputImageOffset],
+			MPI::COMM_WORLD.Recv(
+					&output_imageMat.data[outputImageOffset],
 					totalRecvDataCount,
-					MPI_UNSIGNED_CHAR,
+					MPI::UNSIGNED_CHAR,
 					source,
 					MSG_FROM_WORKER,
-					MPI_COMM_WORLD,
-					&status)
+					status
 			);
+
 
 			outputImageOffset += totalRecvDataCount;
 
-			//Musimy pobrać czasy wykonania (timeElapsed) z innych procesów
-			double timeElapsedForProcess = 0.0d;
-			HANDLE_ERROR(MPI_Recv(&timeElapsedForProcess,
-					1,
-					MPI_DOUBLE,
-					source,
-					MSG_FROM_WORKER,
-					MPI_COMM_WORLD,
-					&status)
-			);
-
-			timeElapsedTotal += timeElapsedForProcess;
-
 		}
+
+		stopTime = MPI::Wtime();
+		timeElapsedTotal = (stopTime - startTime) * 1000;
 
 		// Zapis obrazka wyjściowego na dysk
 		try {
@@ -219,60 +192,45 @@ int main(int argc, char *argv[]) {
 		// Rank != 0, każdy inny proces
 
 		// Odbieranie danych początkowych
-		HANDLE_ERROR(MPI_Recv(&columnsTotal,
+		MPI::COMM_WORLD.Recv(&columnsTotal,
 				1,
-				MPI_INT,
+				MPI::INT,
 				MASTER,
 				MSG_FROM_MASTER,
-				MPI_COMM_WORLD,
-				&status)
-		);
-		HANDLE_ERROR(MPI_Recv(&rowsToCalculate,
-				1,
-				MPI_INT,
-				MASTER,
-				MSG_FROM_MASTER,
-				MPI_COMM_WORLD,
-				&status)
+				status
 		);
 
+		MPI::COMM_WORLD.Recv(&rowsToCalculate,
+				1,
+				MPI::INT,
+				MASTER,
+				MSG_FROM_MASTER,
+				status
+		);
 
 		// Tworzymy macierze na wejścię i wyjście mniejsze o 4
 		cv::Mat inputMatrixForProcess = cv::Mat(rowsToCalculate, columnsTotal, CV_8UC3);
 		cv::Mat outputMatrixForProcess = cv::Mat(rowsToCalculate - 4, columnsTotal - 4, CV_8UC3);
 
 		// Odbieramy dane potrzebne do obliczeń od MASTERA
-		HANDLE_ERROR(MPI_Recv(&inputMatrixForProcess.data[0],
+		MPI::COMM_WORLD.Recv(&inputMatrixForProcess.data[0],
 				rowsToCalculate * columnsTotal * 3,
-				MPI_UNSIGNED_CHAR,
+				MPI::UNSIGNED_CHAR,
 				MASTER,
 				MSG_FROM_MASTER,
-				MPI_COMM_WORLD, &status)
+				status
 		);
 
-		// Obliczanie swojej części
-		startTime = MPI_Wtime();
 		do5GaussMPI(&inputMatrixForProcess, &outputMatrixForProcess);
-		stopTime = MPI_Wtime();
-		double myTimeElapsed = (stopTime - startTime) * 1000;
 
 		// Wysyłanie do MASTERA wyników
-		HANDLE_ERROR(MPI_Send(&outputMatrixForProcess.data[0],
+		MPI::COMM_WORLD.Send(&outputMatrixForProcess.data[0],
 				outputMatrixForProcess.rows * outputMatrixForProcess.cols * CHANNELS,
-				MPI_UNSIGNED_CHAR,
+				MPI::UNSIGNED_CHAR,
 				MASTER,
-				MSG_FROM_WORKER,
-				MPI_COMM_WORLD)
+				MSG_FROM_WORKER
 		);
 
-		//Wysyłamy czas wykonania z każdego procesu!
-		HANDLE_ERROR(MPI_Send(&myTimeElapsed,
-				1,
-				MPI_DOUBLE,
-				MASTER,
-				MSG_FROM_WORKER,
-				MPI_COMM_WORLD)
-		);
 
 		//Czyszczenie pamięci!
 		inputMatrixForProcess.release();
@@ -403,5 +361,4 @@ void do5GaussMPI(cv::Mat *my_input_img, cv::Mat *my_output_image) {
 			my_output_image->data[myOutputPointer++] = redTotal;
 		}
 	}
-
 }
