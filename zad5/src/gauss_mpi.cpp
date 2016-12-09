@@ -73,12 +73,6 @@ int main(int argc, char *argv[]) {
 			return -1;
 		}
 
-		// Przypadek gdy jest tylko jeden proces
-		// Powinien on sam zrobić rozmycie gaussa i zapisać obrazek!
-		if (processCount == 1) {
-
-		}
-
 		output_imageMat = cv::Mat(input_imageMat.rows - 4, input_imageMat.cols - 4, input_imageMat.type());
 
 		// Wysyłamy ilość wierszy, ilość kolumn
@@ -404,7 +398,6 @@ void do5GaussMPI(cv::Mat *my_input_img, cv::Mat *my_output_image) {
 			redTotal   = redTotal   / 25.0f;
 
 			//Zapisanie pixela do obrazka wynikowego
-
 			my_output_image->data[myOutputPointer++] = blueTotal;
 			my_output_image->data[myOutputPointer++] = greenTotal;
 			my_output_image->data[myOutputPointer++] = redTotal;
