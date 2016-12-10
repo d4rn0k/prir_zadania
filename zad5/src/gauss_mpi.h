@@ -11,11 +11,10 @@
 
 extern int rank;
 
-
-void do5Gauss(cv::Mat *my_input_img, cv::Mat *my_output_image, int threads);
 int getRowsCountForProcess(int totalRows, int totalProcesses, int currentProcessCount);
 
-void do5GaussMPI(cv::Mat *my_input_img, cv::Mat *my_output_image);
+void do5GaussMPI(cv::Mat *my_input_img, cv::Mat *my_output_image, int rowsToCalculate, int colsToCalculate);
+
 std::vector<int> getRowsPerProcessDistribution(int totalRows, int totalProcesses);
 
 

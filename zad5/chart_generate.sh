@@ -60,3 +60,11 @@ do
 	echo $i $AVG_SPEEDUP >> texData/$SPEEDUP_CHART_FILENAME.data
 
 done
+
+eval gnuplot < "$GNUPLOT_CHART_CONFIG_FILENAME"
+
+sleep 1s
+echo -e "\e[31m Generowanie .esp->.pdf potrzebne do LaTeX'a \e[0m"
+
+ps2pdf -dEPSCrop $TIME_CHART_FILENAME.eps $TIME_CHART_FILENAME.pdf
+ps2pdf -dEPSCrop $SPEEDUP_CHART_FILENAME.eps $SPEEDUP_CHART_FILENAME.pdf

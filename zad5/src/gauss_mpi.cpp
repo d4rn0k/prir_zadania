@@ -64,12 +64,11 @@ int main(int argc, char *argv[]) {
 			MPI::COMM_WORLD.Abort(-1);
 			MPI::Finalize();
 
-			return -1;
+			return EXIT_FAILURE;
 		}
 
 		output_imageMat = cv::Mat(input_imageMat.rows - 4, input_imageMat.cols - 4, input_imageMat.type());
 
-		// Wysyłamy ilość wierszy, ilość kolumn
 		columnsTotal = input_imageMat.cols;
 
 		/*
@@ -147,7 +146,7 @@ int main(int argc, char *argv[]) {
 		// Proces MASTER operuje bezpośrednio na macierzy którą wczytał i na tej którą zapisze
 		// Bo nie potrzebne jest tutaj kopiowanie pamięci
 		startTime = MPI::Wtime();
-		do5GaussMPI(&input_imageMat, &output_imageMat);
+		do5GaussMPI(&input_imageMat, &output_imageMat, rowsPerProcess[MASTER], columnsTotal);
 
 		// Odbieramy obliczone dane od reszty procesów
 		int outputImageOffset = (rowsPerProcess[MASTER] - 4) * (columnsTotal - 4) * CHANNELS;
@@ -180,7 +179,7 @@ int main(int argc, char *argv[]) {
 			std::cout << "Błąd podczas zapisu wynikowego obrazka:\n" << exc.what() << std::endl;
 		}
 
-		//Czyścimy wszystkie macierze
+		//Czyścimy wszystkie macierze procesu MASTER
 		input_imageMat.release();
 		output_imageMat.release();
 		inputMatrixForFirstProcess.release();
@@ -208,7 +207,7 @@ int main(int argc, char *argv[]) {
 				status
 		);
 
-		// Tworzymy macierze na wejścię i wyjście mniejsze o 4
+		// Tworzymy macierze na wejście i wyjście mniejsze o 4
 		cv::Mat inputMatrixForProcess = cv::Mat(rowsToCalculate, columnsTotal, CV_8UC3);
 		cv::Mat outputMatrixForProcess = cv::Mat(rowsToCalculate - 4, columnsTotal - 4, CV_8UC3);
 
@@ -221,7 +220,7 @@ int main(int argc, char *argv[]) {
 				status
 		);
 
-		do5GaussMPI(&inputMatrixForProcess, &outputMatrixForProcess);
+		do5GaussMPI(&inputMatrixForProcess, &outputMatrixForProcess, rowsToCalculate, columnsTotal);
 
 		// Wysyłanie do MASTERA wyników
 		MPI::COMM_WORLD.Send(&outputMatrixForProcess.data[0],
@@ -238,7 +237,8 @@ int main(int argc, char *argv[]) {
 	}
 
 	MPI::Finalize();
-	return 0;
+
+	return EXIT_SUCCESS;
 }
 
 std::vector<int> getRowsPerProcessDistribution(int totalRows, int totalProcesses) {
@@ -285,7 +285,7 @@ int getRowsCountForProcess(int totalRows, int totalProcesses, int currentProcess
 
 
 // Produkuje romzycie Gauss'a dla wejściowej macierzy
-void do5GaussMPI(cv::Mat *my_input_img, cv::Mat *my_output_image) {
+void do5GaussMPI(cv::Mat *my_input_img, cv::Mat *my_output_image, int rowsToCalculate, int colsToCalculate) {
 
 	int channels = my_input_img->channels();
 
@@ -304,7 +304,7 @@ void do5GaussMPI(cv::Mat *my_input_img, cv::Mat *my_output_image) {
 	int myOutputPointer = 0;
 
 	//Główna pętla programu
-	for(row = 2; row < my_input_img->rows - 2; ++row) {
+	for(row = 2; row < rowsToCalculate - 2; ++row) {
 
 		minus2Row  = my_input_img->ptr<uchar>(row - 2);
 		minus1Row  = my_input_img->ptr<uchar>(row - 1);
@@ -312,7 +312,7 @@ void do5GaussMPI(cv::Mat *my_input_img, cv::Mat *my_output_image) {
 		plus1Row   = my_input_img->ptr<uchar>(row + 1);
 		plus2Row   = my_input_img->ptr<uchar>(row + 2);
 
-		for(col = 2; col < my_input_img->cols - 2; ++col){
+		for(col = 2; col < colsToCalculate - 2; ++col){
 
 			int blueTotal  = 0;
 			int greenTotal = 0;
