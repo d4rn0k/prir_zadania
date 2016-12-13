@@ -26,6 +26,8 @@ int main(int argc, char *argv[]) {
 	MPI::Status status;
 	MPI::Init(argc, argv);
 
+	MPI::COMM_WORLD.Set_errhandler ( MPI::ERRORS_THROW_EXCEPTIONS );
+
 	processCount = MPI::COMM_WORLD.Get_size();
 	rank = MPI::COMM_WORLD.Get_rank();
 
@@ -44,12 +46,16 @@ int main(int argc, char *argv[]) {
 			input_imageMat = cv::imread(argv[1], CV_LOAD_IMAGE_COLOR);
 			outputImagePath = argv[2];
 
+			if (input_imageMat.empty()) {
+				throw std::runtime_error("Brak obrazu wejściowego!");
+			}
+
 			if (processCount < 0 ) {
 				throw std::runtime_error("Liczba procesów nieprawidłowa!");
 			}
 
 			if (outputImagePath.empty()) {
-				throw std::runtime_error("Pusta ścieżka obrazka wyjściowego!");
+				throw std::runtime_error("Pusta ścieżka obrazu wyjściowego!");
 			}
 
 		} catch (std::exception &exc){
@@ -63,6 +69,7 @@ int main(int argc, char *argv[]) {
 
 			MPI::COMM_WORLD.Abort(-1);
 			MPI::Finalize();
+
 
 			return EXIT_FAILURE;
 		}
@@ -171,12 +178,13 @@ int main(int argc, char *argv[]) {
 		stopTime = MPI::Wtime();
 		timeElapsedTotal = (stopTime - startTime) * 1000;
 
-		// Zapis obrazka wyjściowego na dysk
+		// Zapis obrazu wyjściowego na dysk
 		try {
 			cv::imwrite(outputImagePath, output_imageMat);
 
 		} catch (std::exception& exc) {
-			std::cout << "Błąd podczas zapisu wynikowego obrazka:\n" << exc.what() << std::endl;
+
+			std::cout << "Błąd podczas zapisu wynikowego obrazu:\n" << exc.what() << std::endl;
 		}
 
 		//Czyścimy wszystkie macierze procesu MASTER
@@ -355,7 +363,7 @@ void do5GaussMPI(cv::Mat *my_input_img, cv::Mat *my_output_image, int rowsToCalc
 			greenTotal = greenTotal / 25.0f;
 			redTotal   = redTotal   / 25.0f;
 
-			//Zapisanie pixela do obrazka wynikowego
+			//Zapisanie pixela do obrazu wynikowego
 			my_output_image->data[myOutputPointer++] = blueTotal;
 			my_output_image->data[myOutputPointer++] = greenTotal;
 			my_output_image->data[myOutputPointer++] = redTotal;

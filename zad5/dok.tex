@@ -7,6 +7,7 @@
 \usepackage{indentfirst}
 \usepackage{geometry}
 \usepackage{array}
+
 \usepackage[pdftex]{color,graphicx}
 \usepackage{subfigure}
 \usepackage{afterpage}
@@ -15,6 +16,15 @@
 \usepackage{wrapfig}
 \usepackage{listings}
 \usepackage{datetime}
+\usepackage{hyperref}
+
+
+\hypersetup{
+  colorlinks   = true, %Colours links instead of ugly boxes
+  urlcolor     = blue, %Colour for external hyperlinks
+  linkcolor    = blue, %Colour of internal links
+  citecolor   = red %Colour of citations
+}
 
 
 \renewcommand{\onehalfspacing}{\setstretch{1.6}}
@@ -61,89 +71,88 @@ Grupa 1 & Kamil Sacha, Konrad Szwedo & \ddmmyyyydate\today \tabularnewline
 
 \renewcommand{\lstlistingname}{Listing kodu}
 
-\section*{Zadanie 2 - Mnożenie macierzy OpenMPI}
+\section*{Zadanie 5 - Rozmycie Gaussa w OpenMPI}
 
-Naszym zadaniem laboratoryjnym było napisanie współbieżnego programu, który miał obliczyć iloczyn dwóch macierzy wstępnie wypełnionymi liczbami według wzorów podanych w zadaniu. Głównym celem było stworzenia rozwiązania które miało pokazywać wpływ tworzenia oprogramowania na szybkość obliczeń.
+Naszym zadaniem laboratoryjnym było napisanie programu wykonującego rozmycie Gaussa, w oparciu o środowisko do zrównoleglenia kodu: OpenMPI. 
+Algorytm Gaussa polega na zastąpieniu pikseli obrazu wejściowego, średnią z obszaru otaczającego ten piksel. W naszym przypadku rozpatrywaliśmy maskę wielkości \(5 \times 5\), czyli do obliczenia musieliśmy znać wszystkie 25 wartości trzech kanałów rozpatrywanego piksela (kanały zapisane odpowiednio w kolejności B - Niebieski, G - Zielony, R - Czerwony). Jako wartość poszczególnego kanału (B, G, R) ustawiamy średnią z całości rozpatrywanego obszaru dla konkretnego kanału. 
 
+\subsection*{Algorytm obliczeń}
 
-\begin{lstlisting}[caption=Część programu odpowiedzialna za wysyłanie macierzy A oraz B i odbiór wyników z reszty procesów, label=kodzik]
- 
-if (totalProcesses != 1) {
+	Głównym problemem w wykonaniu tego zadania był odpowiedni podział obrazu wejściowego tak aby każdy proces miał odpowiednią 
+	porcję danych potrzebną do obliczeń. 
+	Proces MASTER wykonujący główne operacje w programie jest odpowiedzialny za sprawdzenie poprawności danych wejściowych,
+	 wczytanie obrazu, zapis rozmytego obrazu. 
+	Jest również odpowiedzialny za przydzielenie pozostałym procesom zadań i odbiór wyników. 
+	Proces główny MASTER, dzieli ilość wierszy na wszystkie obecne procesy (również dla samego siebie) i 
+	wysyła je do czekających na dane procesów. Korzystamy z funkcji która zwraca podział obrazu w zależności od całkowitej ilości wierszy,
+	 całkowitej ilości procesów oraz numeru procesu dla którego pytamy o wynik. 
+	 Przykładowo gdy mamy 100 wierszy i uruchamiamy program dla 3 procesów wtedy procesy 
+	 $P_0$= 33, $P_1$=33, $P_2$=34 otrzymują podaną ilość wierszy.
+	 Ponadto zerowy proces musi otrzymać dodatkowo 2 wiersze (wiersze od 33 do 35)
+	 ostatni proces także dostaje dwa wiersze poniżej (wiersze od 64 do 100),
+	 natomiast procesy środkowe w naszym przykładzie $P_1$ dostają dodatkowe 4 wiersze (wiersze od 31 do 68). 
+	 Nadmiarowe wiersze potrzebne są do obliczenia prawidłowej ilości wierszy wynikowych (wynikowo zawsze 4 mniej) 
+	 związane jest to oczywiście z zastosowaną przez nas maską 5x5.
+	 
+	\begin{lstlisting}[caption=Funkcja dzieląca procesy.=Row pointery]	
+int getRowsCountForProcess(int totalRows, int totalProcesses, int currentProcessCount) {
 
-starttime = MPI_Wtime();
+	int rows = 0;
 
+	if (totalProcesses == 1) {
+		return totalRows;
+	}
 
-for(int destination = 1; destination < totalProcesses; destination++){
+	rows = totalRows / totalProcesses;
 
-	elemsForProc = getElemsCountForProcess(matrixSize, totalProcesses, destination);
-	rowsOffset += elemsForProc / matrixSize;
+	if (currentProcessCount + 1 == totalProcesses) {
+		rows += totalRows % totalProcesses;
+	}
 
-	MPI_Send(&elemsForProc,                  1,   MPI_INT, destination, MSG_FROM_MASTER, MPI_COMM_WORLD);
-	MPI_Send(&rowsOffset,                    1,   MPI_INT, destination, MSG_FROM_MASTER, MPI_COMM_WORLD);
-	MPI_Send(&A[rowsOffset][0],   elemsForProc, MPI_FLOAT, destination, MSG_FROM_MASTER, MPI_COMM_WORLD);
-	MPI_Send(&B[0][0], matrixSize * matrixSize, MPI_FLOAT, destination, MSG_FROM_MASTER, MPI_COMM_WORLD);
-}
+	return rows;
+}		
+		\end{lstlisting}
 
+Powyższy listing kodu pokazuje początkowy algorytm podziału ilości wierszy dla procesów. 
+Wszystkie procesy otrzymują po równo ilość wierszy, poza ostatnim, który otrzymuje to co zostało w puli. 
+Pierwszy proces  dostaje: getRowsCountForProcess + 2 wierszy. 
+Środkowe procesy dostają: getRowsCountForProcess + 4 wierszy z offsetem wierszy na -2 od bieżącego.
+Ostatni  proces  dostaje: getRowsCountForProcess + 2 wierszy z offsetem wierszy na -2 od bieżącego.
 
-multiplyPartOfMatrix(A, B, C, matrixSize, 0, getElemsCountForProcess(matrixSize, totalProcesses, MASTER));
+\section*{Wyniki i wnioski}
 
-
-for (int source = 1; source < totalProcesses; source++) {
-	MPI_Recv(&elemsForProc,                 1, MPI_INT,    source, MSG_FROM_WORKER, MPI_COMM_WORLD, &status);
-	MPI_Recv(&rowsOffset,                   1, MPI_INT,    source, MSG_FROM_WORKER, MPI_COMM_WORLD, &status);
-	MPI_Recv(&C[rowsOffset][0], elemsForProc , MPI_DOUBLE, source, MSG_FROM_WORKER, MPI_COMM_WORLD, &status);
-}
-
-endtime   = MPI_Wtime();
-
-printf("Czas %.0f ms\n", (endtime - starttime) * 1000);
-}
-
-
-\end{lstlisting}
-
-Zrównoleglenie problemu mnożenia macierzy zostało wykonane w środowisku OpenMPI, jest to środowisko do wymiany wiadomości/komunikatów między procesami.
-
-Powyższy fragment kodu przedstawia część odpowiedzialną za odbieranie, liczenie, oraz wysyłanie danych do procesu mastera - zarządcy. Algorytm działa w następujący sposób:
-Gdy program uruchomiony jest jako posiadający maksimum 1 proces, najpierw inicjalizowane są macierze A, B, C, następnie generowane liczby wypełniające je a na końcu cały blok instrukcji mnożenia macierzy jest wykonywany przez pojedynczy proces. 
-Gdy liczba procesów jest większa niż dwa, proces główny master rozsyła pozostałym całą macierz B, część macierzy A, oraz liczbę elementów które ma policzyć i liczbę wierszy (macierzy A). 
-Procesy są blokowane funkcją czekającą na dane \textbf{MPI\_Recv(...)}.
-
-Gdy otrzymają dane wykonywana jest funkcja: \textbf{multiplyPartOfMatrix(A, B, C, matrixSize, rowsOffset, elemsForProc)} która to oblicza swoją część macierzy i zapisuje ją do tablicy \textbf{C}. Następnie procesy inne niż master, wysyłają z powrotem dane do procesu mastera który to czeka na złączenie wszystkich wyników w swoim egzemplarzu tablicy \textbf{C}. Proces master po wysłaniu danych, przystępuje do liczenia, dzięki temu podejściu każdy proces ma swój udział w obliczeniach i nie dochodzi do sytuacji, że jeden proces byłby wykorzystywany tylko na generowanie, wysyłanie i dalsze oczekiwanie na wyniki.
-
-
-\section*{Wyniki}
-
-\begin{wrapfigure}{l}{0.6\textwidth}
-	\vbox{-10pt}
-	\resizebox{1.0\linewidth}{!}{\input{dane/wykres_czasu}}    
-    \caption{Wykres zależności czasu wykonania od liczby procesów. Dla rozmiaru $10^6$ danych 	macierzy.}
-\end{wrapfigure}
-
-Program za pomocą biblioteki openMPI zrównoleglony został poprawnie,
-o czym świadczy wykres 1. \\
-Niewielkie załamanie liniowości wykresu związane jest najprawdopodobniej z wykorzystywaniem technologi \textit{HyperThreading}. 
-Inną przyczyną może być też testowanie na serwerze który nie pracuje tylko i wyłącznie dla nas (wykonuje on też swoje zadania co wpływa na wynik, nie mamy 100\% dostępu do czasu procesora. 
-\clearpage
+     Jak możemy się spodziewać, czas wykonania programu zmniejsza się dla większej niż 1 liczbie procesów. 
+     Niestety zaobserwowany wzrost przyśpieszenia nie jest liniowy. Związane jest to przede wszystkim z dużym narzutem 
+     na kopiowanie danych. Dla obrazu "1.jpg" posiadającego 3 kanały każdy po 1 bajt wielkość transmisji równa będzie około 309 MiB
+      (minus część nieprzesyłana, którą oblicza proces MASTER). Jest to ilość potrzebna do wysłania w jedną stronę, 
+      a dane początkowe musimy jednak najpierw wysłać a potem odebrać wyniki. 
+      Wartość czasu wykonania dla 5 procesów większa niż dla 4, najprawdopodobniej jest związana z obecnością 4 rdzeni fizycznych 
+      reszta rdzeni jest dublowana w technologii HyperThreading, która to nie odzwierciedla wydajności jak fizyczne rdzenie. 
+      Innym problemem wskazującym na dane wyniki, jest problem prawidłowego sprawdzania czasu wykonania. 
+      Nie jesteśmy w stanie zmierzyć dokładnego czasu wykonań funkcji realizujących rozmycie Gauss'a, do tego czasu również wliczamy 
+      jest okres poświęcony na odbiór wyników z procesów.
+     
 
 
-\begin{wrapfigure}{r}{0.6\textwidth}
-	\vspace{-10pt}
-	\resizebox{1.0\linewidth}{!}{\input{dane/wykres_przyspieszenia.tex}} 	
-    \caption{Wykres zależności przyśpieszenia od liczby procesów. Dla rozmiaru $10^6$ danych macierzy.}
-\end{wrapfigure}
+\begin{figure}
+	\begin{center}
+ 		\include{texData/wykres_czasu}
+	\end{center}
+	
+    \caption{Wykres zależności czasu wykonania od ilości procesów.
+     Dla obrazu wejściowego '1.jpg' o wymiarach \(24107 \times 4491 \approx 10^9\) pikseli.}
+
+\end{figure}
 
 
-Największą wydajność uzyskujemy dla 4 procesów, naszym zdaniem związane jest to z tym, że w takim układzie każdy rdzeń procesora dostaje swój proces i wykorzystuje go maksymalnie. \\
 
-
-\section*{Procedura testowania}
-
-Do przetestowania planowanego wzrostu wydajności został napisany skrypt pracujący pod powłoką BASH. Dla zadanego rozmiaru macierzy  w naszym przypadku $10^6$ oblicza średnią z 10 uruchomień naszego programu macierzomp (jako rozmiar macierzy przyjmujemy całkowitą ilość elementów jednej macierzy, wynika z tego, że macierz jest jest rozmiaru n x n gdzie n = $\sqrt[]{matrixSize}$, n jest zawsze liczbą całkowitą). W Ostatnim etapie generowany jest wykres w programie gnuplot. Program kompiluje się poprawnie poprzez kompilator MPI \textit{gcxx} z flagą \textit{-O3} w celu optymalizacji kodu i tym samym przyśpieszenia wykonania programu.
-
-\section*{Wnioski}
-
-Jak możemy zauważyć skalowalność czasowa jest liniowa do wartości 4 procesów. Wiążę się to z kilkoma czynnikami, jednym z czynników jest to, że dla większej ilości procesów powstaje narzut współbieżności związany z tworzeniem, synchronizacją, i zarządzaniem poszczególnymi procesami. Drugim ważniejszym czynnikiem jest narzut związany z wymianą danych, przykładowo dla macierzy rozmiarów (100x100) zawierającą 1E4 elementów, gdzie każdy element jest liczbą zmiennoprzecinkową typu float, na samo wysłanie wyników do procesu mastera musimy wymienić 4E8 bajtów czyli około 400 megabajtów pamięci. 
-
+\begin{figure}
+	\begin{center}
+ 		\include{texData/wykres_przyspieszenia}   		 		
+	\end{center}
+	
+    \caption{Wykres zależności przyśpieszenia od ilości procesów.
+     Dla obrazu wejściowego '1.jpg' o wymiarach \(24107 \times 4491 \approx 10^9\) pikseli.}
+\end{figure}
 
 \end{document}
